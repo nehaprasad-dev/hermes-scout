@@ -1,240 +1,209 @@
 # CompliScore
 
-### Your startup's compliance health checked in 60 seconds.
+**Check your startup's compliance health in 60 seconds.**
 
-Every Indian startup founder knows the feeling. You're moving fast, shipping product, chasing revenue — and somewhere in the back of your mind there's a quiet voice asking: *"Have we filed everything? Are we going to get a notice?"*
+Type a company name. Get a score out of 100, see what's overdue, estimate penalty exposure, and read a plain-English action plan — no CA jargon, no login.
 
-CompliScore answers that question before it becomes a problem.
+Built for the [Hermes Agent Challenge](https://dev.to/challenges/hermes-agent-2026-05-15) — the AI layer uses **Hermes Agent** for planning, tool use, and multi-step reasoning, with a visible agent trace so you can see how the report was built.
 
-Type any company name. In under two seconds you get a **compliance score out of 100**, a list of what's overdue, a rough penalty estimate, and an **AI-written action plan** in plain English - not CA jargon.
-
-It's free, it's instant, and it runs on your phone. No login, no documents, no waiting.
-
----
-
-## The problem it solves
-
-India's startup ecosystem is booming, but compliance is still confusing. GST returns, MCA annual filings, TDS deadlines, random notices - most early-stage founders don't know where they stand until a CA tells them they're behind. By then, penalties have already started piling up.
-
-There's no simple way for a non-finance founder to just *check* if things are okay. That's what CompliScore is for.
-
-You type your company name. You get a score. You see exactly what's pending. And if it's bad, you see how much it might cost you. That's it. The whole thing takes less time than ordering chai.
+| | |
+|---|---|
+| **Live demo** | https://hermes-scout.vercel.app *(update after you deploy)* |
+| **Repo** | https://github.com/nehaprasad-dev/hermes-scout |
 
 ---
 
-## What you actually get
+## Why this exists
 
-When you scan a company, the result card shows:
+Indian founders move fast. GST returns, MCA filings, random notices — most people don't know where they stand until a CA tells them they're behind. By then, penalties are already adding up.
 
-- **Compliance score (0–100)** — green, amber, or red. You know instantly where you stand.
-- **Risk badge** — Low, Medium, or High. No ambiguity.
-- **Pending tasks** — every overdue filing and unresolved notice, spelled out one by one. GSTR-3B, MCA annual return, pending notices — all of it.
-- **Penalty estimate** — a rough range of what the government could charge you if these stay unresolved. Not legal advice, but enough to make you pay attention.
-- **AI action plan** — a short, founder-friendly breakdown of what to do first, what's urgent, and what can wait. Written by Groq's `llama-3.3-70b-versatile` model, scoped to under 150 words so you actually read it.
-- **Paid scan CTA** — if the free scan scares you (or excites you), there's a one-tap path to request a real, filings-backed scan for ₹5,000 delivered in 2 hours.
+CompliScore gives you a quick gut-check: **type a name, get a score, see what to fix first.** It's a demo product (fictional data), but the experience is real enough to know if you need help.
 
 ---
 
-## How it actually works under the hood
+## What you get from a scan
+
+| Output | What it means |
+|--------|----------------|
+| **Score (0–100)** | Green, amber, or red — how healthy the profile looks |
+| **Risk level** | Low, Medium, or High |
+| **Pending tasks** | Overdue GSTR-3B, MCA returns, notices — listed one by one |
+| **Penalty estimate** | Rough INR range if things stay unresolved (not legal advice) |
+| **AI action plan** | What to fix first, what's urgent, what can wait |
+| **Agent investigation** | *(when Hermes is on)* Collapsible trace of the agent's plan and tool calls |
+
+There's also a lead form for founders who want a paid, filings-backed scan (₹5,000, 2-hour delivery). See [PLAYBOOK.md](./PLAYBOOK.md) for how that works.
+
+---
+
+## How Hermes Agent fits in
+
+CompliScore used to call Groq once and print a summary. Now it can run a real **agent loop**:
 
 ```
-You type a name → we look it up → score it → generate an AI summary → show you everything
+You scan a company
+    → scoring engine computes the score (always deterministic)
+    → Hermes plans what to investigate
+    → Hermes calls tools (penalties, filing calendar, notices…)
+    → Hermes writes the final report
+    → UI shows the report + agent trace
 ```
 
-Here's the slightly longer version:
+If Hermes isn't available, the app falls back to **Groq**, then a **static summary**. The scan never breaks.
 
-1. You enter a company name and hit **Scan** (or tap one of the suggestion chips — Razorpay, Zepto, Meesho, Khatabook).
-2. The frontend sends `{ companyName }` to `POST /api/scan`.
-3. We try to match that name against ~36 curated Indian company profiles. The match is fuzzy and forgiving — "razor" finds Razorpay, "cred" finds CRED.
-4. **If we find a match**, we use that hand-built profile. **If we don't**, we generate a deterministic synthetic profile from the company name (same name always produces the same result, clearly labelled "Sample data" in the UI).
-5. The scoring engine in `lib/scoring.ts` does the math:
-   - Everyone starts at **100**.
-   - You lose **15 points** for every month your GST return (GSTR-3B) is overdue.
-   - You lose **20 points** if your MCA annual return hasn't been filed.
-   - You lose **10 points** for each pending government notice.
-   - Score is clamped between 0 and 100. **70+ is Low risk. 40–69 is Medium. Below 40 is High.**
-6. That structured result goes to the **Hermes Agent** (when enabled): a plan → tool-call → reason loop that calls deterministic compliance tools, then writes the action plan. If Hermes is unavailable, it falls back to Groq, then a static summary.
-7. When Hermes succeeds, the UI shows a collapsible **Agent investigation** panel with the agent's plan and tool calls.
-8. If all AI paths fail, the app still works — score, tasks, and penalty estimate are always there.
+### The four tools Hermes can call
 
-After the scan, a **lead capture form** lets founders drop their WhatsApp number or email to request the paid real scan. That submission goes to `POST /api/lead`, gets validated (Indian 10-digit mobile or email), and is forwarded to whatever webhook you've configured — Discord, Slack, Zapier, Formspree, anything.
+Scores and penalties come from code — the model doesn't make up numbers.
+
+| Tool | What it does |
+|------|----------------|
+| `score_company` | Returns score, risk level, pending tasks |
+| `estimate_penalty` | GST / MCA / notice penalty breakdown |
+| `filing_calendar` | Upcoming GSTR-3B, GSTR-1, MCA deadlines |
+| `classify_notices` | Labels each notice by category and severity |
+
+Hermes talks to a **self-hosted OpenAI-compatible API** (vLLM, LM Studio, Ollama, etc.). See `lib/agent/` for the implementation.
 
 ---
 
-## A note about the data
+## Quick start
 
-Let's be upfront: CompliScore runs on **demo data**. It does not connect to any government portal. Real GST filing history, MCA delinquency records, and pending notices are **private** in India — only the company itself (or its CA with OTP-authenticated access) can pull them.
+**You need:** Node 20+ and npm.
 
-That's the whole point of the business model. The free scan gives founders an instant, recognizable "oh shit" moment using curated or synthetic data. The **paid scan** (₹5,000, 2-hour delivery) is where we actually log into portals with the founder's credentials and pull real filings. See [PLAYBOOK.md](./PLAYBOOK.md) for the full fulfilment workflow.
+```bash
+git clone https://github.com/nehaprasad-dev/hermes-scout.git
+cd hermes-scout
+npm install
+cp .env.local.example .env.local
+```
 
-All company names in the mock dataset are used for **demo recognition only**. PANs and GSTINs are format-plausible placeholders, not real identifiers. Nothing in this app makes any claim about any real company's actual compliance status.
+Edit `.env.local` — for everyday dev, this is enough:
+
+```bash
+GROQ_API_KEY=your_key_here          # free at https://console.groq.com/keys
+HERMES_ENABLED=false                # keep false unless Hermes is running locally
+```
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) and scan **Razorpay** or **Mumbai Chai**.
+
+### Other commands
+
+```bash
+npm run build    # production build
+npm run start    # serve production build
+npm run test     # run Vitest (36 tests)
+npm run lint     # ESLint
+```
+
+---
+
+## Environment variables
+
+Copy `.env.local.example` to `.env.local`. Never commit `.env.local`.
+
+| Variable | Required? | What it does |
+|----------|-----------|--------------|
+| `GROQ_API_KEY` | Recommended | Powers AI summaries when Hermes is off or fails |
+| `HERMES_ENABLED` | No | Set `true` only when a Hermes server is running |
+| `HERMES_BASE_URL` | If Hermes on | e.g. `http://localhost:8000/v1` |
+| `HERMES_MODEL` | If Hermes on | e.g. `NousResearch/Hermes-3-Llama-3.1-8B` |
+| `HERMES_API_KEY` | No | Only if your Hermes server requires auth — often leave empty |
+| `HERMES_TIMEOUT_MS` | No | Max time for an agent run (default `12000`) |
+| `HERMES_MAX_STEPS` | No | Max tool-call rounds (default `4`) |
+| `LEAD_WEBHOOK_URL` | No | Discord / Slack / Zapier webhook for lead form |
+
+**Local tip:** Running Hermes on a laptop is slow and can freeze the browser. Use `HERMES_ENABLED=false` locally and deploy to Vercel for a smooth demo.
+
+**Production tip:** On Vercel, set `HERMES_ENABLED=false` and `GROQ_API_KEY` — `localhost` Hermes cannot be reached from the cloud.
+
+---
+
+## Companies to try
+
+**Homepage chips:** Razorpay, Zepto, Meesho, Khatabook
+
+| Try this | What you'll see |
+|----------|-----------------|
+| **Mumbai Chai Co.** | High risk — overdue GST, MCA, multiple notices |
+| **Razorpay** | Clean profile, score 100 |
+| **Bengaluru Bytes** | Clean fictional company |
+| **Any other name** | Synthetic profile, labelled "Sample data" |
+
+All compliance details are **fictional** — for demo only. Real well-known names are used for recognition, not to claim their actual filing status.
+
+---
+
+## Project layout
+
+```
+app/
+  page.tsx                 # Landing page + scanner
+  api/scan/route.ts        # Scan API — scoring + Hermes/Groq
+  api/lead/route.ts        # Lead form webhook
+
+components/
+  scanner.tsx              # Main UI
+  agent-trace.tsx          # Collapsible Hermes trace panel
+  lead-form.tsx            # Paid scan CTA
+
+lib/
+  scoring.ts               # Deterministic score (source of truth)
+  mock-data.ts             # ~36 curated company profiles
+  agent/                   # Hermes loop, tools, fallback, tests
+
+scripts/
+  record-demo.mjs          # Record a demo video (Playwright)
+  encode-demo.sh           # Convert to MP4 + GIF
+```
+
+More detail: [DEPLOY.md](./DEPLOY.md) · [DEV_SUBMISSION.md](./DEV_SUBMISSION.md) · [PLAYBOOK.md](./PLAYBOOK.md)
+
+---
+
+## Deploy to production
+
+The easiest path is **Vercel + Groq** (fast scans, no local GPU needed).
+
+1. Push this repo to GitHub  
+2. Import at [vercel.com/new](https://vercel.com/new)  
+3. Set `GROQ_API_KEY` and `HERMES_ENABLED=false`  
+4. Deploy  
+
+Full steps: **[DEPLOY.md](./DEPLOY.md)**
+
+---
+
+## Record a demo video
+
+With the dev server running:
+
+```bash
+node scripts/record-demo.mjs
+bash scripts/encode-demo.sh
+```
+
+Produces a short reel (Razorpay + Khatabook scans) for your DEV post or socials.
+
+---
+
+## Important disclaimer
+
+- All data in this app is **demo / fictional**. No government portals are connected.  
+- PAN and GSTIN values are **format-only placeholders**, not real identifiers.  
+- Penalty numbers are **directional estimates**, not legal advice.  
+- For real compliance work, talk to a Chartered Accountant.
 
 ---
 
 ## Tech stack
 
-| What | Why |
-|------|-----|
-| **Next.js 16** (App Router) | Server-side API routes + React frontend in one project. No separate backend needed. |
-| **Tailwind CSS v4** | Fast styling with a premium editorial feel — dot-grid backgrounds, aurora blobs, serif headlines. |
-| **Framer Motion** | Smooth score count-up animation and result card transitions. Makes the 2-second scan feel alive. |
-| **Hermes Agent** (OpenAI-compatible) | Primary reasoning engine — plan, tool use, multi-step report. See `lib/agent/`. |
-| **Groq SDK** (`llama-3.3-70b-versatile`) | Fast fallback when Hermes is disabled or unreachable. |
-| **TypeScript** (strict) | End-to-end type safety. Every API response, every component prop, every scoring function. |
-| **shadcn-style primitives** | Hand-rolled `Button`, `Input`, `Card`, `Badge`, `Skeleton` in `components/ui/`. No external component library. |
+Next.js 16 · TypeScript · Tailwind CSS v4 · Framer Motion · Hermes Agent (OpenAI-compatible) · Groq · Vitest · Vercel
 
-No database. No auth. No government APIs. That's intentional — this ships in a day and runs on Vercel's free tier.
-
----
-
-## Project structure
-
-```
-app/
-  layout.tsx              # Root layout — fonts (Geist + Instrument Serif), metadata
-  page.tsx                # Hero section, navbar, aurora background, scanner embed
-  globals.css             # Tailwind v4 + custom background effects (dots, blobs, noise)
-  api/
-    scan/route.ts         # POST /api/scan — profile lookup, scoring, Groq call
-    lead/route.ts         # POST /api/lead — validation, webhook forwarding
-
-components/
-  scanner.tsx             # The main event — search input, suggestion chips, skeleton
-                          #   loader, animated score, result card, example preview
-  lead-form.tsx           # Paid scan CTA card (₹5,000 / 2-hour delivery)
-  ui/                     # Button, Input, Card, Badge, Skeleton primitives
-
-lib/
-  types.ts                # Company, ScanResult, AgentTrace types
-  mock-data.ts            # ~36 curated Indian companies + synthetic profile builder
-  scoring.ts              # Pure scoring engine + penalty estimator
-  agent/                  # Hermes Agent loop (orchestrator, tools, client, fallback)
-  utils.ts                # cn() (clsx + tailwind-merge)
-
-scripts/
-  record-demo.mjs         # Playwright script — records a marketing demo as webm
-  encode-demo.sh          # ffmpeg pipeline — converts to MP4 + GIF
-
-PLAYBOOK.md               # Internal ops guide for fulfilling paid scans
-DEPLOY.md                 # Vercel production deploy (recommended over heavy local Hermes)
-DEV_SUBMISSION.md         # DEV challenge post template
-.env.local.example        # Environment variable reference
-```
-
----
-
-## Getting started
-
-**You need:** Node 20+ and npm.
-
-```bash
-git clone https://github.com/nehaprasad-dev/compliscore.git
-cd compliscore
-npm install
-cp .env.local.example .env.local
-```
-
-Open `.env.local` and optionally fill in:
-
-| Variable | Required? | What it does |
-|----------|-----------|--------------|
-| `GROQ_API_KEY` | No (yes for prod) | Powers the AI action plan (also used as Hermes fallback). Free at [console.groq.com/keys](https://console.groq.com/keys). |
-| `HERMES_ENABLED` | No | Set `true` only when a Hermes server is running. Leave `false` for fast local dev. |
-| `HERMES_BASE_URL` | No | OpenAI-compatible endpoint, e.g. `http://localhost:8000/v1` |
-| `HERMES_MODEL` | No | Model id served by your Hermes runtime |
-| `LEAD_WEBHOOK_URL` | No (yes for prod) | Where lead form submissions get forwarded. |
-
-**Local tip:** Hermes on a laptop is heavy and can freeze the browser. Use `HERMES_ENABLED=false` locally and deploy to Vercel for production — see [DEPLOY.md](./DEPLOY.md).
-
-Then:
-
-```bash
-npm run dev          # start dev server
-```
-
-Open [http://localhost:3000](http://localhost:3000) and try scanning "Razorpay" or "Zepto".
-
-```bash
-npm run build        # production build
-npm run start        # serve production build
-npm run lint         # ESLint check
-```
-
----
-
-## Companies you can try
-
-**Suggestion chips on the homepage:** Razorpay, Zepto, Meesho, Khatabook
-
-These are all real, well-known Indian startups (several are YC alumni). Their compliance details in this app are entirely fictional — used for demo recognition only.
-
-**Full curated list:**
-
-| Category | Companies |
-|----------|-----------|
-| Fintech | Razorpay, CRED, PhonePe, Paytm, Cashfree, Zerodha, Groww, BharatPe |
-| Commerce | Flipkart, Meesho, Nykaa, Zepto, Zomato, Swiggy |
-| SaaS & devtools | Postman, Freshworks, Khatabook, ClearTax, SpotDraft, Apna |
-| Mobility / health / edtech | Ola, OYO, Urban Company, Practo, Unacademy |
-
-**Fictional companies** (these show the full risk spectrum for demo purposes):
-
-- **Mumbai Chai** — High risk. Overdue GST, overdue MCA, multiple notices.
-- **Hyderabad Health** — Worst-case scenario. Score near zero.
-- **Chennai Coders** — Medium risk. A few things slipping.
-- **Bengaluru Bytes** — Clean. Score of 100.
-
-**Type literally anything else** — you'll get a synthetic profile, clearly marked as sample data.
-
----
-
-## Recording a demo video
-
-With the dev server running:
-
-```bash
-node scripts/record-demo.mjs     # captures a webm via headless Playwright
-bash scripts/encode-demo.sh      # encodes to MP4 (1.2 MB) + GIF (6.6 MB)
-```
-
-The script clicks through Razorpay (clean, score 100) and Khatabook (action items, score 75), scrolls through the AI action plan and lead form, and produces a ~20-second reel ready for X or LinkedIn.
-
-Output files are gitignored. Upload them directly wherever you need them.
-
----
-
-## Setting up lead capture
-
-1. **Create a webhook.** For Discord: Server Settings → Integrations → Webhooks → New Webhook → Copy URL. Similar for Slack, Zapier, etc.
-2. **Paste the URL** into `LEAD_WEBHOOK_URL` in `.env.local` (and in Vercel environment variables for production).
-3. **Test it.** Run a scan, fill in the lead form at the bottom of the result, submit. You should see the payload arrive in your channel.
-
-Each lead includes: company name, score, risk level, industry, and the founder's contact info. See [PLAYBOOK.md](./PLAYBOOK.md) for the complete playbook on turning leads into paid scans.
-
----
-
-## Deploying to production
-
-**Recommended:** deploy to Vercel and use Groq for fast scans. Local Hermes inference is too heavy for most laptops.
-
-See **[DEPLOY.md](./DEPLOY.md)** for step-by-step Vercel setup, environment variables, and optional Hermes-on-a-remote-server configuration.
-
-Quick version:
-
-1. Push to GitHub.
-2. Import the repo in [Vercel](https://vercel.com) (set root to `compliscore` if nested).
-3. Add `GROQ_API_KEY` and `HERMES_ENABLED=false` as environment variables.
-4. Deploy and test with **Mumbai Chai** / **Razorpay**.
-
-For the DEV challenge, copy **[DEV_SUBMISSION.md](./DEV_SUBMISSION.md)** into your post and add your live URL.
-
----
-
-## Disclaimer
-
-- All compliance data in this app is **fictional and for demonstration only**. PAN and GSTIN values are format-plausible placeholders, not real government-issued identifiers.
-- Penalty estimates are **rough and directional** — they exist to create awareness, not to be cited in front of a tax officer.
-- CompliScore is a **diagnostic tool**, not legal or tax advice. For real filings and compliance work, consult a Chartered Accountant.
+No database. No auth. Ships on the free tier.
 
 ---
 
