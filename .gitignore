@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# next.js
+.next/
+out/
+
+# env (never commit secrets)
+.env
+.env.*
+!.env.local.example
+
+# build / cache
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# testing
+coverage/
+
+# vercel
+.vercel
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+
+# demo artifacts
+.recordings/
+compliscore-demo.mp4
+compliscore-demo.gif
+
+# kiro / IDE (optional)
+.kiro/
